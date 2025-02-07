@@ -1,0 +1,19 @@
+package com.example.filesmanager.Interface
+
+
+interface CustomMediaPlayer{
+    fun start()
+    fun pause()
+    fun getDuration(): Int
+    fun getCurrentPosition(): Int
+    fun seekTo(pos: Int)
+    fun isPlaying(): Boolean
+    fun getBufferPercentage(): Int
+    fun canPause(): Boolean
+    fun canSeekBackward(): Boolean
+    fun canSeekForward(): Boolean
+    fun isFullScreen(): Boolean
+    fun toggleFullScreen()
+    fun nextItem()
+    fun prevItem()
+}
