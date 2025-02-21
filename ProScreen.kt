@@ -1,7 +1,6 @@
-package com.example.financialcalc.Activitys
+package com.files.fileexplorer.filecleanup.cleaner.Activity
 
 import android.app.Dialog
-import android.app.ProgressDialog
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -12,12 +11,12 @@ import android.text.style.ClickableSpan
 import android.text.style.ForegroundColorSpan
 import android.util.Log
 import android.view.View
-import android.widget.ImageView
-import android.widget.LinearLayout
+import android.view.View.GONE
+import android.view.View.VISIBLE
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.cardview.widget.CardView
+import androidx.appcompat.content.res.AppCompatResources
 import androidx.lifecycle.MutableLiveData
 import com.android.billingclient.api.AcknowledgePurchaseParams
 import com.android.billingclient.api.AcknowledgePurchaseResponseListener
@@ -32,114 +31,158 @@ import com.android.billingclient.api.ProductDetailsResponseListener
 import com.android.billingclient.api.Purchase
 import com.android.billingclient.api.PurchasesUpdatedListener
 import com.android.billingclient.api.QueryProductDetailsParams
-import com.example.financialcalc.Ads.AdConstant
-import com.example.financialcalc.Ads.AdLoad
-import com.example.financialcalc.MainActivity
-import com.example.financialcalc.R
-import com.example.financialcalc.Utils.AppConstant
+import com.files.fileexplorer.filecleanup.cleaner.R
+import com.files.fileexplorer.filecleanup.cleaner.Utils.AdLoader
+import com.files.fileexplorer.filecleanup.cleaner.Utils.AppConstant
+import com.files.fileexplorer.filecleanup.cleaner.Utils.RemoteValue
+import com.files.fileexplorer.filecleanup.cleaner.Utils.StringConstant
+import com.files.fileexplorer.filecleanup.cleaner.databinding.ActivityProScreenBinding
 import com.google.common.collect.ImmutableList
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 
-class ProScreen : AppCompatActivity(){
+class ProScreen : AppCompatActivity() {
     lateinit var billingClient: BillingClient
-    val SKU_Lifetime_AddBucket_120: String = "financial_pro"
+    val SKU_Lifetime_AddBucket_120: String = "file_manager_pro_monthly"
+    val SKU_Lifetime_AddBucket_240: String = "file_manager_pro_yearly"
     private var purchaseItem: Purchase? = null
-    private var mProgressDialog:ProgressDialog? = null
-    var price: MutableLiveData<String> = MutableLiveData("0.0")
+    var price: MutableLiveData<Double> = MutableLiveData(0.0)
+    var yearly: MutableLiveData<Double> = MutableLiveData(0.0)
+
+    private lateinit var binding: ActivityProScreenBinding
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_pro_screen)
-        val closeBtn: ImageView = findViewById(R.id.iv_close)
-        val termText: TextView = findViewById(R.id.tv_privacy_policy_text)
-        val continueWithAd = findViewById<CardView>(R.id.btn_with_ad)
-        val purchaseBtn = findViewById<CardView>(R.id.btn_buy_pro)
-        val progressBar = findViewById<LinearLayout>(R.id.progress)
-        val priceView: TextView = findViewById(R.id.price)
+
+        binding = ActivityProScreenBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        var plan: Boolean = true
         val intent = intent
         var fromPro: Boolean = false
-        setupBillingClient()
+        billingClient = BillingClient.newBuilder(this)
+            .setListener(purchasesUpdatedListener)
+            .enablePendingPurchases()
+            .build()
+
+
+        getPrice()
+
         intent?.let {
-            fromPro = it.getBooleanExtra("fromPro", false)
+            fromPro = it.getBooleanExtra("fromPro", true)
         }
 
 
         val sharePref = applicationContext.getSharedPreferences(
-            AppConstant.PACKAGE_NAME,
+            StringConstant.packageName,
             MODE_PRIVATE
         )
 
 
-        var localPrice = sharePref.getInt("price", 0)
-
-        price.value = localPrice.toString()
-        price.observe(this) {
-            priceView.text = "${it.toString()}/Lifetime"
-        }
 
 
         if (fromPro) {
-            closeBtn.visibility = View.VISIBLE
-            continueWithAd.visibility = View.GONE
+            binding.ivClose.visibility = View.VISIBLE
+            binding.btnWithAd.visibility = View.GONE
         } else {
-            if (AdConstant.rewardAdId.isNotEmpty()) {
-                AdLoad.loadRewardedAd(AdConstant.rewardAdId, this)
-                AdLoad.rewardAdLoaded.observe(this) {
+            if (RemoteValue.rewardAdId.isNotEmpty()) {
+                AdLoader.loadRewardedAd(RemoteValue.rewardAdId, this)
+                AdLoader.rewardAdLoaded.observe(this) {
 
-                    if (AdLoad.rewardFailed) {
-                        val newIntent = Intent(this, MainActivity::class.java)
+                    if (AdLoader.rewardFailed) {
+                        val newIntent = Intent(this, HomeScreen::class.java)
                         startActivity(newIntent)
                         finish()
                     }
-                    if (progressBar.visibility == View.VISIBLE) {
-                        AdLoad.showRewardedAd(this)
+                    if (binding.progressbar.visibility == View.VISIBLE) {
+                        AdLoader.showRewardedAd(this)
                     }
                 }
             }
         }
 
-        purchaseBtn.setOnClickListener {
-            mProgressDialog = ProgressDialog(this)
-            mProgressDialog?.show()
-            purchaseItem(SKU_Lifetime_AddBucket_120)
+
+        binding.btnBuyPro.setOnClickListener {
+            if (plan) {
+                if (binding.monthlyPlanPrice.visibility == VISIBLE)
+                    purchaseProduct(SKU_Lifetime_AddBucket_120)
+            } else {
+                if (binding.yearlyPlanPrice.visibility == VISIBLE)
+                    purchaseProduct(SKU_Lifetime_AddBucket_240)
+            }
+        }
+
+        binding.yearlyPlan.setOnClickListener {
+            plan = false
+            binding.yearlyPlan.background =
+                AppCompatResources.getDrawable(this, R.drawable.primary_color_border)
+            binding.yearlyPlanTick.setImageDrawable(
+                AppCompatResources.getDrawable(
+                    this,
+                    R.drawable.ic_tick
+                )
+            )
+            binding.monthlyPlan.background = null
+            binding.monthlyPlanTick.setImageDrawable(
+                AppCompatResources.getDrawable(
+                    this,
+                    R.drawable.ic_untick
+                )
+            )
+        }
+
+        binding.monthlyPlan.setOnClickListener {
+            plan = true
+            binding.monthlyPlan.background =
+                AppCompatResources.getDrawable(this, R.drawable.primary_color_border)
+            binding.monthlyPlanTick.setImageDrawable(
+                AppCompatResources.getDrawable(
+                    this,
+                    R.drawable.ic_tick
+                )
+            )
+            binding.yearlyPlan.background = null
+            binding.yearlyPlanTick.setImageDrawable(
+                AppCompatResources.getDrawable(
+                    this,
+                    R.drawable.ic_untick
+                )
+            )
         }
 
 
 
-
-        closeBtn.setOnClickListener {
+        binding.ivClose.setOnClickListener {
             finish()
         }
 
-        continueWithAd.setOnClickListener {
-            if (AdConstant.rewardAdId.isEmpty()) {
-                val newIntent = Intent(this, MainActivity::class.java)
+        binding.btnWithAd.setOnClickListener {
+            if (RemoteValue.rewardAdId.isEmpty()) {
+                val newIntent = Intent(this, HomeScreen::class.java)
                 startActivity(newIntent)
                 finish()
             } else {
-                if (AdLoad.rewardFailed) {
-                    val newIntent = Intent(this, MainActivity::class.java)
+                if (AdLoader.rewardFailed) {
+                    val newIntent = Intent(this, HomeScreen::class.java)
                     startActivity(newIntent)
                     finish()
                 } else {
-                    if (AdLoad.rewardAdLoaded.value!!) {
-                        AdLoad.showRewardedAd(this)
+                    if (AdLoader.rewardAdLoaded.value!!) {
+                        AdLoader.showRewardedAd(this)
                     } else {
-                        progressBar.visibility = View.VISIBLE
+                        binding.progressbar.visibility = View.VISIBLE
                     }
                 }
             }
 
         }
 
-        Log.e("TAG", "onCreate: ${termText.text}")
-        val termSpanning: SpannableString = SpannableString(termText.text)
-        val indexOfTerm = termText.text.indexOf("Term")
-        val indexOfPrivacy = termText.text.indexOf("Privacy")
-
+        val termSpanning: SpannableString = SpannableString(binding.term.text)
+        val privacy = SpannableString(binding.privacy.text)
         termSpanning.setSpan(
             ForegroundColorSpan(getColor(R.color.colorBlue)),
-            indexOfTerm,
-            indexOfTerm + 16,
+            0,
+            binding.term.text.length,
             Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
 
         )
@@ -147,74 +190,48 @@ class ProScreen : AppCompatActivity(){
             object : ClickableSpan() {
                 override fun onClick(widget: View) {
                     val intent = Intent(Intent.ACTION_VIEW)
-                    intent.setData(Uri.parse(AppConstant.privacyLink))
+                    intent.setData(Uri.parse(RemoteValue.privacyLink))
                     startActivity(intent)
                 }
 
             },
-            indexOfTerm,
-            indexOfTerm + 16,
+            0,
+            binding.term.text.length,
             Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
         )
-        termSpanning.setSpan(
+        privacy.setSpan(
             ForegroundColorSpan(getColor(R.color.colorBlue)),
-            indexOfPrivacy,
-            indexOfPrivacy + 14,
+            0,
+            binding.privacy.text.length,
             Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
         )
 
-        termSpanning.setSpan(
+        privacy.setSpan(
             object : ClickableSpan() {
                 override fun onClick(widget: View) {
                     val intent = Intent(Intent.ACTION_VIEW)
-                    intent.setData(Uri.parse(AppConstant.privacyLink))
+                    intent.setData(Uri.parse(RemoteValue.privacyLink))
                     startActivity(intent)
                 }
 
             },
-            indexOfPrivacy,
-            indexOfPrivacy + 14,
+            0,
+            binding.privacy.text.length,
             Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
         )
 
-        termText.isClickable = true
-        termText.movementMethod = LinkMovementMethod.getInstance()
+        binding.term.isClickable = true
+        binding.term.movementMethod = LinkMovementMethod.getInstance()
+        binding.term.text = termSpanning
 
+        binding.privacy.isClickable = true
+        binding.privacy.movementMethod = LinkMovementMethod.getInstance()
+        binding.privacy.text = privacy
 
-        termText.text = termSpanning
     }
 
-    private fun setupBillingClient() {
-        val instance = BillingClient.newBuilder(this)
-        .setListener(purchasesUpdatedListener)
-            .enablePendingPurchases()
-            .build()
-        this.billingClient = instance
-
-        billingClient.startConnection(object : BillingClientStateListener {
-            override fun onBillingServiceDisconnected() {
-            }
-
-            override fun onBillingSetupFinished(billingResult: BillingResult) {
-                if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
-                    queryProductDetails()
-                }
-            }
-        })
-        instance.startConnection(object : BillingClientStateListener {
-            override fun onBillingSetupFinished(billingResult: BillingResult) {
-                if (billingResult.responseCode == 0) {
-                    return
-                }
-            }
-
-            override fun onBillingServiceDisconnected() {
-            }
-        })
-    }
-
-    fun purchaseItem(item: String) {
-
+    fun purchaseProduct(id: String) {
+        Log.e("TAG", "purchaseProduct: $id")
         billingClient.startConnection(object : BillingClientStateListener {
             override fun onBillingServiceDisconnected() {
             }
@@ -224,24 +241,24 @@ class ProScreen : AppCompatActivity(){
                     .setProductList(
                         ImmutableList.of(
                             QueryProductDetailsParams.Product.newBuilder()
-                                .setProductId(SKU_Lifetime_AddBucket_120)
-                                .setProductType(BillingClient.ProductType.INAPP)
+                                .setProductId(id).setProductType(BillingClient.ProductType.SUBS)
                                 .build()
                         )
                     ).build()
 
-                billingClient.queryProductDetailsAsync(
-                    queryProductDetailsParams,
+                billingClient.queryProductDetailsAsync(queryProductDetailsParams,
                     object : ProductDetailsResponseListener {
                         override fun onProductDetailsResponse(
                             billingResult: BillingResult,
                             productDetailsList: MutableList<ProductDetails>
                         ) {
                             for (i in productDetailsList) {
+                                val offerToken = i.subscriptionOfferDetails!![0].offerToken
                                 val productParamsList = ImmutableList.of(
                                     BillingFlowParams.ProductDetailsParams.newBuilder()
-                                        .setProductDetails(i).build()
+                                        .setProductDetails(i).setOfferToken(offerToken).build()
                                 )
+
                                 val billingFlowParams = BillingFlowParams.newBuilder()
                                     .setProductDetailsParamsList(productParamsList)
                                     .build()
@@ -253,11 +270,91 @@ class ProScreen : AppCompatActivity(){
                             }
                         }
 
-                    },
-                )
+                    })
             }
 
         })
+
+    }
+
+    private fun getPrice() {
+        billingClient.startConnection(object : BillingClientStateListener {
+            override fun onBillingSetupFinished(billingResult: BillingResult) {
+                if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
+                    val executorService: ExecutorService = Executors.newSingleThreadExecutor()
+                    executorService.execute {
+                        val queryProductDetailsParams =
+                            QueryProductDetailsParams.newBuilder()
+                                .setProductList(
+                                    ImmutableList.of(
+                                        QueryProductDetailsParams.Product.newBuilder()
+                                            .setProductId(SKU_Lifetime_AddBucket_120)
+                                            .setProductType(BillingClient.ProductType.SUBS)
+                                            .build(),
+                                        QueryProductDetailsParams.Product.newBuilder()
+                                            .setProductId(SKU_Lifetime_AddBucket_240)
+                                            .setProductType(BillingClient.ProductType.SUBS)
+                                            .build()
+                                    )
+                                )
+                                .build()
+                        billingClient.queryProductDetailsAsync(
+                            queryProductDetailsParams
+                        ) { billingResult, productDetailsList ->
+                            Log.e("TAG", "onBillingSetupFinished: ${productDetailsList.size}")
+                            for (productDetails in productDetailsList) {
+                                try {
+                                    checkNotNull(productDetails.subscriptionOfferDetails)
+                                    val id = productDetails!!.productId
+                                    val formattedprice = productDetails.subscriptionOfferDetails!!.first().pricingPhases.pricingPhaseList.first().formattedPrice
+                                    if (id == SKU_Lifetime_AddBucket_120) {
+                                        runOnUiThread {
+                                            binding.montlyProgress.visibility = GONE
+                                            binding.monthlyPlanPrice.visibility = VISIBLE
+                                            binding.monthlyPlanPrice.text = formattedprice
+                                        }
+                                    } else if (id == SKU_Lifetime_AddBucket_240) {
+                                        runOnUiThread {
+                                            binding.yearlyProgress.visibility = GONE
+                                            binding.yearlyPlanPrice.visibility = VISIBLE
+                                            binding.yearlyPlanPrice.text = formattedprice
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e("TAG", "onBillingSetupFinished: ",e )
+                                }
+                            }
+                        }
+                    }
+                    runOnUiThread {
+                        try {
+                            Thread.sleep(1000)
+                        } catch (e: InterruptedException) {
+                            e.printStackTrace()
+                        }
+                    }
+                }
+            }
+
+            override fun onBillingServiceDisconnected() {
+            }
+        })
+    }
+
+    private fun successDialog() {
+        val dialog = Dialog(this, R.style.s_permission)
+        dialog.setContentView(R.layout.my_purchase_dialog)
+        dialog.setCancelable(false)
+        val buttonYes = dialog.findViewById<TextView>(R.id.buttonOk)
+        buttonYes.setOnClickListener {
+            dialog.dismiss()
+            val i: Intent = Intent(this@ProScreen, HomeScreen::class.java)
+            startActivity(i)
+            finish()
+        }
+        if (!isFinishing) {
+            dialog.show()
+        }
     }
 
     private val purchasesUpdatedListener =
@@ -270,28 +367,25 @@ class ProScreen : AppCompatActivity(){
                     }
                 }
             } else if (billingResult.responseCode == BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED) {
-                AppConstant.PURCHASE_STATUS = true
+                AppConstant.isPremium = true
                 successDialog()
-                applicationContext.getSharedPreferences(AppConstant.PACKAGE_NAME, MODE_PRIVATE).edit().putBoolean("PURCHASE", true).apply()
             } else if (billingResult.responseCode == BillingClient.BillingResponseCode.FEATURE_NOT_SUPPORTED) {
-                AppConstant.PURCHASE_STATUS = false
+                AppConstant.isPremium = false
             } else if (billingResult.responseCode == BillingClient.BillingResponseCode.BILLING_UNAVAILABLE) {
-                AppConstant.PURCHASE_STATUS = false
+                AppConstant.isPremium = false
             } else if (billingResult.responseCode == BillingClient.BillingResponseCode.USER_CANCELED) {
-                AppConstant.PURCHASE_STATUS = false
+                AppConstant.isPremium = false
             } else if (billingResult.responseCode == BillingClient.BillingResponseCode.DEVELOPER_ERROR) {
-                AppConstant.PURCHASE_STATUS = false
+                AppConstant.isPremium = false
             } else if (billingResult.responseCode == BillingClient.BillingResponseCode.ITEM_UNAVAILABLE) {
-                AppConstant.PURCHASE_STATUS = false
+                AppConstant.isPremium = false
             } else if (billingResult.responseCode == BillingClient.BillingResponseCode.NETWORK_ERROR) {
-                AppConstant.PURCHASE_STATUS = false
+                AppConstant.isPremium = false
             } else if (billingResult.responseCode == BillingClient.BillingResponseCode.SERVICE_DISCONNECTED) {
-                AppConstant.PURCHASE_STATUS = false
+                AppConstant.isPremium = false
             } else {
                 Toast.makeText(this, "Try Again", Toast.LENGTH_SHORT).show()
             }
-            mProgressDialog?.dismiss()
-
         }
 
     fun handlePurchase(purchase: Purchase) {
@@ -317,94 +411,21 @@ class ProScreen : AppCompatActivity(){
                     acknowledgePurchaseResponseListener
                 )
                 successDialog()
-                AppConstant.PURCHASE_STATUS = true
-                applicationContext.getSharedPreferences(AppConstant.PACKAGE_NAME, MODE_PRIVATE).edit().putBoolean("PURCHASE", true).apply()
+                AppConstant.isPremium = true
             }
 
         } else if (purchase.purchaseState == Purchase.PurchaseState.PENDING) {
-            AppConstant.PURCHASE_STATUS = false
+            AppConstant.isPremium = false
         } else if (purchase.purchaseState == Purchase.PurchaseState.UNSPECIFIED_STATE) {
-            AppConstant.PURCHASE_STATUS = false
+            AppConstant.isPremium = false
         }
     }
 
     var acknowledgePurchaseResponseListener: AcknowledgePurchaseResponseListener =
         AcknowledgePurchaseResponseListener { billingResult ->
             if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
-                AppConstant.PURCHASE_STATUS = true
+                AppConstant.isPremium = true
                 successDialog()
             }
         }
-
-    private fun queryProductDetails() {
-        val productList = ImmutableList.of(
-            QueryProductDetailsParams.Product.newBuilder()
-                .setProductId(SKU_Lifetime_AddBucket_120)
-                .setProductType(BillingClient.ProductType.INAPP)
-                .build(),
-        )
-
-        val params = QueryProductDetailsParams.newBuilder().setProductList(productList).build()
-
-
-        // Query product details asynchronously
-        billingClient.queryProductDetailsAsync(
-            params,
-            ProductDetailsResponseListener { billingResult, productDetailsList ->
-                Log.e("TAG", "queryProductDetails: ${productDetailsList.size}")
-                for (productDetails in productDetailsList) {
-                    try {
-                        val id = productDetails!!.productId
-                        val formattedprice =
-                            productDetails.oneTimePurchaseOfferDetails?.formattedPrice
-
-                        price.postValue(formattedprice)
-                    } catch (e: Exception) {
-                        Log.e("TAG", "onBillingSetupFinished: ", e)
-                    }
-                }
-            })
-
-
-    }
-
-
-
-
-    private fun successDialog() {
-        val dialog = Dialog(this, R.style.s_permission)
-        dialog.setContentView(R.layout.my_purchase_dialog)
-        dialog.setCancelable(false)
-        val buttonYes = dialog.findViewById<TextView>(R.id.buttonOk)
-        buttonYes.setOnClickListener {
-            dialog.dismiss()
-            val i: Intent = Intent(this@ProScreen, MainActivity::class.java)
-            startActivity(i)
-            finish()
-        }
-        if (!isFinishing) {
-            dialog.show()
-        }
-    }
-
-    fun handleItemAlreadyPurchase(list: List<Purchase>) {
-        purchaseItem = null
-        val next = list[0]
-        this.billingClient.consumeAsync(
-            ConsumeParams.newBuilder()
-                .setPurchaseToken(next.purchaseToken).build(),
-            ConsumeResponseListener { billingResult, s ->
-                if (next.purchaseToken.equals(
-                        SKU_Lifetime_AddBucket_120,
-                        ignoreCase = true
-                    )
-                ) {
-                    val sharePref = applicationContext.getSharedPreferences(
-                        AppConstant.PACKAGE_NAME,
-                        MODE_PRIVATE
-                    )
-                    sharePref.edit().putBoolean("PURCHASE", true).apply()
-                }
-            })
-    }
 }
